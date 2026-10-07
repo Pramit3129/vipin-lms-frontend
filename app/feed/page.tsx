@@ -1,11 +1,11 @@
 "use client"
 
-import { ArrowRight, BookOpen, Loader2, Trash2 } from "lucide-react"
+import { ArrowRight, BookOpen, Compass, Loader2, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { useCallback, useEffect, useState } from "react"
 
 import { AppShell, ErrorNote, PageTitle, errMsg } from "@/components/app-shell"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Field, FieldLabel } from "@/components/ui/field"
@@ -81,7 +81,16 @@ function Feed() {
         {!loading && courses.length === 0 && !error && (
           <Card className="bg-white">
             <CardContent className="py-8 text-center text-sm text-gray-500">
-              {canTeach ? "You don't own any courses yet." : "You are not enrolled in any course yet."}
+              {canTeach ? (
+                "You don't own any courses yet."
+              ) : (
+                <div className="space-y-3">
+                  <p>You are not enrolled in any course yet. Free lessons are open to everyone.</p>
+                  <Link href="/explore" className={buttonVariants({ variant: "navy", size: "sm" })}>
+                    <Compass /> Explore free previews
+                  </Link>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

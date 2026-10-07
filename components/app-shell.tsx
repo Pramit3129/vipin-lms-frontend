@@ -1,6 +1,6 @@
 "use client"
 
-import { BookOpen, GraduationCap, LogOut, Newspaper, Users } from "lucide-react"
+import { BookOpen, Compass, GraduationCap, LogOut, Newspaper, Users } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
@@ -18,8 +18,14 @@ const NAV: Record<Role, { href: string; label: string; icon: typeof BookOpen }[]
     { href: "/feed", label: "My courses", icon: Newspaper },
     { href: "/enrollments", label: "Enrollments", icon: Users },
   ],
-  instructor: [{ href: "/feed", label: "My classroom", icon: Newspaper }],
-  student: [{ href: "/feed", label: "My learning", icon: GraduationCap }],
+  instructor: [
+    { href: "/feed", label: "My classroom", icon: Newspaper },
+    { href: "/explore", label: "Explore", icon: Compass },
+  ],
+  student: [
+    { href: "/feed", label: "My learning", icon: GraduationCap },
+    { href: "/explore", label: "Explore", icon: Compass },
+  ],
 }
 
 // The server is the source of truth for who is signed in and their role.
@@ -72,7 +78,16 @@ function useVerifiedSession(userId: string | undefined) {
  * Page frame + client-side route guard. The UI only shows what a role can do;
  * the API enforces the same rules on the server, so this is a convenience, not the security boundary.
  */
-export function AppShell({ roles, children }: { roles?: Role[]; children: React.ReactNode }) {
+export function AppShell({
+  roles,
+  bare,
+  children,
+}: {
+  roles?: Role[]
+  /** Guard only, no header/footer/container: for full-bleed pages like the video player. */
+  bare?: boolean
+  children: React.ReactNode
+}) {
   const router = useRouter()
   const pathname = usePathname()
   const user = useUser()
@@ -86,6 +101,7 @@ export function AppShell({ roles, children }: { roles?: Role[]; children: React.
   }, [user, allowed, verified, router])
 
   if (!user || !allowed || !verified) return null
+  if (bare) return children
 
   return (
     <div className="flex min-h-svh flex-col bg-gray-50">

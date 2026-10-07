@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowRight, ChevronDown, ChevronsUpDown, ClipboardList, Eye, EyeOff, FileText, Layers, Loader2, Pencil, Plus, Trash2, Upload } from "lucide-react"
+import { ArrowRight, ChevronDown, ChevronsUpDown, CirclePlay, ClipboardList, Eye, EyeOff, FileText, Film, Layers, Loader2, Lock, LockOpen, Pencil, Plus, Trash2, Upload } from "lucide-react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useCallback, useEffect, useState } from "react"
@@ -9,12 +9,13 @@ import { AppShell, ErrorNote, PageTitle, errMsg } from "@/components/app-shell"
 import { PdfPreview } from "@/components/pdf-preview"
 import { QuizBuilder } from "@/components/quiz-builder"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { VideoList, VideoSection } from "@/components/video-section"
 import { useUser } from "@/hooks/use-user"
 import {
   UUID_RE,
@@ -25,6 +26,7 @@ import {
   downloadNote,
   getCourse,
   listExams,
+  listCourseVideos,
   listLessons,
   listQuizzes,
   updateCourse,
@@ -37,6 +39,7 @@ import {
   type Lesson,
   type Note,
   type Quiz,
+  type Video,
 } from "@/lib/api"
 
 const MAX_PDF = 25 * 1024 * 1024
@@ -58,6 +61,7 @@ function CourseView() {
   const valid = UUID_RE.test(id)
   const [course, setCourse] = useState<CourseT | null>(null)
   const [lessons, setLessons] = useState<Lesson[]>([])
+  const [videos, setVideos] = useState<Video[]>([])
   const [loading, setLoading] = useState(valid)
   const [error, setError] = useState<string | null>(valid ? null : "That is not a valid course ID.")
   const [mode, setMode] = useState<"lesson" | "edit" | null>(null)
@@ -73,7 +77,11 @@ function CourseView() {
     try {
       const c = await getCourse(id)
       setCourse(c)
-      if (user.role !== "admin" || c.instructorId === user.id) setLessons(await listLessons(id))
+      if (user.role !== "admin" || c.instructorId === user.id) {
+        const [ls, vs] = await Promise.all([listLessons(id), listCourseVideos(id)])
+        setLessons(ls)
+        setVideos(vs)
+      }
     } catch (e) {
       setError(errMsg(e))
     } finally {
@@ -108,6 +116,16 @@ function CourseView() {
     }
   }
 
+  const readyVideos = videos.filter((v) => v.status === "ready").length
+  // Not enrolled in a paid course: only free lessons, notes, quizzes and videos open.
+  const preview = course?.access === "preview"
+  const playable = videos.filter((v) => v.status === "ready" && !v.locked).length
+  const freeLessons = lessons.filter((l) => !l.locked).length
+  const learnHref = `/courses/${id}/learn`
+  // Each lesson card manages its own slice of the course's videos.
+  const setLessonVideos = (lessonId: string) => (fn: (v: Video[]) => Video[]) =>
+    setVideos((all) => [...all.filter((v) => v.lessonId !== lessonId), ...fn(all.filter((v) => v.lessonId === lessonId))])
+
   const patchLesson = (lessonId: string, fn: (l: Lesson) => Lesson) =>
     setLessons((ls) => ls.map((l) => (l.id === lessonId ? fn(l) : l)))
 
@@ -121,8 +139,13 @@ function CourseView() {
             : course?.shortDescription || "Lessons, notes and quizzes for this course."
         }
         actions={
-          isOwner && (
+          isOwner ? (
             <div className="flex flex-wrap items-center gap-2">
+              {readyVideos > 0 && (
+                <Link href={learnHref} className={buttonVariants({ variant: "outline" })}>
+                  <CirclePlay /> Preview player
+                </Link>
+              )}
               <Select aria-label="Course status" className="h-9 w-36" value={course.status} onChange={(e) => onStatus(e.target.value as CourseStatus)}>
                 <option value="draft">Draft</option>
                 <option value="published">Published</option>
@@ -138,11 +161,33 @@ function CourseView() {
                 <Plus /> Add lesson
               </Button>
             </div>
+          ) : (
+            canSeeLessons &&
+            playable > 0 && (
+              <Link href={learnHref} className={buttonVariants({ variant: "navy", size: "lg" })}>
+                <CirclePlay /> {preview ? "Watch free preview" : "Start learning"}
+              </Link>
+            )
           )
         }
       />
 
       <ErrorNote error={error} />
+
+      {preview && canSeeLessons && (
+        <div className="rise flex flex-wrap items-center gap-4 rounded-lg border border-secondary bg-lime-soft/50 p-5" style={{ "--i": 1 } as React.CSSProperties}>
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-secondary text-navy">
+            <LockOpen className="size-5" />
+          </span>
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <p className="font-semibold text-heading">You&apos;re previewing this course</p>
+            <p className="tnum text-sm text-heading/80">
+              {freeLessons} of {lessons.length} {lessons.length === 1 ? "lesson is" : "lessons are"} free to preview, along with any free videos and
+              quizzes. Ask your admin to enroll you to unlock everything.
+            </p>
+          </div>
+        </div>
+      )}
 
       {course && (
         <div className="rise grid gap-6 rounded-lg border border-border bg-white p-6 shadow-[0_1px_2px_rgba(10,37,64,0.05)] lg:grid-cols-[1fr_auto] lg:items-center" style={{ "--i": 1 } as React.CSSProperties}>
@@ -150,6 +195,7 @@ function CourseView() {
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={course.status === "published" ? "default" : "secondary"}>{course.status}</Badge>
               {course.isFree && <Badge variant="lime">Free</Badge>}
+              {preview && <Badge variant="secondary">Preview</Badge>}
               {user.role === "admin" && !isOwner && <Badge variant="secondary">Owned by another instructor</Badge>}
             </div>
             {course.description && (
@@ -161,6 +207,10 @@ function CourseView() {
               <div>
                 <dt className="text-xs text-muted-foreground">Lessons</dt>
                 <dd className="tnum text-3xl font-semibold text-heading">{lessons.length}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Videos</dt>
+                <dd className="tnum text-3xl font-semibold text-heading">{isOwner ? videos.length : readyVideos}</dd>
               </div>
               <div>
                 <dt className="text-xs text-muted-foreground">Notes</dt>
@@ -240,6 +290,8 @@ function CourseView() {
             index={i + 1}
             lesson={l}
             isOwner={isOwner}
+            videos={videos.filter((v) => v.lessonId === l.id)}
+            setVideos={setLessonVideos(l.id)}
             onChange={(fn) => patchLesson(l.id, fn)}
             onDeleted={() => setLessons((ls) => ls.filter((x) => x.id !== l.id))}
           />
@@ -391,6 +443,8 @@ function LessonCard({
   index,
   lesson,
   isOwner,
+  videos,
+  setVideos,
   onChange,
   onDeleted,
 }: {
@@ -399,14 +453,17 @@ function LessonCard({
   index: number
   lesson: Lesson
   isOwner: boolean
+  videos: Video[]
+  setVideos: (fn: (v: Video[]) => Video[]) => void
   onChange: (fn: (l: Lesson) => Lesson) => void
   onDeleted: () => void
 }) {
   const [preview, setPreview] = useState<Note | null>(null)
   const [quizzes, setQuizzes] = useState<Quiz[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [panel, setPanel] = useState<"note" | "quiz" | "edit" | null>(null)
+  const [panel, setPanel] = useState<"note" | "quiz" | "video" | "edit" | null>(null)
   const notes = lesson.notes ?? []
+  const locked = !!lesson.locked
   const setNotes = (fn: (n: Note[]) => Note[]) => onChange((l) => ({ ...l, notes: fn(l.notes ?? []) }))
 
   useEffect(() => {
@@ -471,14 +528,21 @@ function LessonCard({
           aria-controls={`lesson-${lesson.id}`}
           className="group flex min-w-0 flex-1 items-center gap-4 rounded-md text-left"
         >
-          <span className="tnum flex size-11 shrink-0 items-center justify-center rounded-full bg-teal text-base font-semibold text-white transition-transform duration-200 group-hover:scale-105">
-            {index}
-          </span>
+          {locked ? (
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500" aria-label="Locked">
+              <Lock className="size-4.5" />
+            </span>
+          ) : (
+            <span className="tnum flex size-11 shrink-0 items-center justify-center rounded-full bg-teal text-base font-semibold text-white transition-transform duration-200 group-hover:scale-105">
+              {index}
+            </span>
+          )}
           <span className="min-w-0 flex-1">
             <span className="block truncate text-lg font-semibold text-heading">{lesson.title}</span>
             <span className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5"><FileText className="size-3.5" />{notes.length} {notes.length === 1 ? "note" : "notes"}</span>
               <span className="flex items-center gap-1.5"><ClipboardList className="size-3.5" />{quizzes.length} {quizzes.length === 1 ? "quiz" : "quizzes"}</span>
+              <span className="flex items-center gap-1.5"><Film className="size-3.5" />{videos.length} {videos.length === 1 ? "video" : "videos"}</span>
             </span>
           </span>
           <ChevronDown className={"size-5 shrink-0 text-heading/60 transition-transform duration-300 " + (open_ ? "rotate-180" : "")} />
@@ -486,6 +550,7 @@ function LessonCard({
         <div className="flex flex-wrap items-center gap-2">
           {isOwner && !lesson.isPublished && <Badge variant="secondary">Draft</Badge>}
           {lesson.isFree && <Badge variant="lime">Free preview</Badge>}
+          {locked && <Badge variant="outline">Enroll to unlock</Badge>}
           {isOwner && (
             <>
               <Button variant="outline" size="sm" onClick={togglePublished}>
@@ -521,6 +586,18 @@ function LessonCard({
               />
             )}
 
+            {!isOwner && <VideoList videos={videos} />}
+            {isOwner && (
+              <VideoSection
+                lessonId={lesson.id}
+                lessonIsFree={lesson.isFree}
+                videos={videos}
+                setVideos={setVideos}
+                formOpen={panel === "video"}
+                setFormOpen={(v) => setPanel(v ? "video" : null)}
+              />
+            )}
+
             <div className="grid gap-6 lg:grid-cols-2">
               <section className="space-y-3">
                 <h3 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-heading uppercase">
@@ -528,7 +605,7 @@ function LessonCard({
                 </h3>
                 {notes.length === 0 && (
                   <p className="rounded-md border border-dashed border-border bg-white px-4 py-5 text-center text-sm text-muted-foreground">
-                    No notes shared yet.
+                    {locked ? "Notes unlock when you enroll." : "No notes shared yet."}
                   </p>
                 )}
                 <ul className="space-y-2">
@@ -574,7 +651,7 @@ function LessonCard({
                 </h3>
                 {quizzes.length === 0 && (
                   <p className="rounded-md border border-dashed border-border bg-white px-4 py-5 text-center text-sm text-muted-foreground">
-                    No quizzes yet.
+                    {locked ? "Quizzes unlock when you enroll." : "No quizzes yet."}
                   </p>
                 )}
                 <ul className="space-y-2">

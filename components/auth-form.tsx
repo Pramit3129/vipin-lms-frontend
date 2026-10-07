@@ -1,25 +1,17 @@
 "use client"
 
-import {
-  AlertCircle,
-  BarChart3,
-  BookOpen,
-  Eye,
-  EyeOff,
-  Loader2,
-  Users,
-} from "lucide-react"
+import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Brand } from "@/components/brand"
+import { AuthShell } from "@/components/auth-shell"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { roleHome } from "@/hooks/use-user"
-import { ApiError, login, register, saveUser } from "@/lib/api"
+import { ApiError, login, register, saveUser, sendVerifyEmail } from "@/lib/api"
 
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const router = useRouter()
@@ -46,6 +38,16 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
           })
         : await login(email, password)
       saveUser(user)
+      if (isSignup) {
+        // Register sets the login cookie, so the verification code can go out right away.
+        // If sending fails the verify page lets the user retry.
+        const sent = await sendVerifyEmail().then(
+          () => true,
+          () => false
+        )
+        router.push(sent ? "/verify-email?sent=1" : "/verify-email")
+        return
+      }
       router.push(roleHome(user.role))
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong")
@@ -54,44 +56,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   }
 
   return (
-    <main className="grid min-h-svh bg-white lg:grid-cols-[5fr_6fr]">
-      {/* Brand panel */}
-      <aside className="relative hidden bg-navy lg:flex lg:flex-col lg:justify-between lg:p-14">
-        <Brand onDark />
-
-        <div className="max-w-md space-y-8">
-          <div className="space-y-4">
-            <h2 className="text-4xl leading-[1.1] font-medium tracking-tight text-white">
-              Learn at your own pace, grow without limits.
-            </h2>
-            <p className="text-base leading-relaxed text-white/75">
-              Courses, progress tracking and community — all in one clean workspace.
-            </p>
-          </div>
-          <ul className="space-y-4">
-            {[
-              { icon: BookOpen, text: "Structured courses from expert instructors" },
-              { icon: BarChart3, text: "Track your progress at a glance" },
-              { icon: Users, text: "Learn together with a supportive community" },
-            ].map(({ icon: Icon, text }) => (
-              <li key={text} className="flex items-center gap-3 text-sm text-white/85">
-                <span className="flex size-8 items-center justify-center rounded-md bg-white/10 text-secondary">
-                  <Icon className="size-4" strokeWidth={1.75} />
-                </span>
-                {text}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <p className="text-xs text-white/60">© {new Date().getFullYear()} LMS Platform</p>
-      </aside>
-
-      {/* Form panel */}
-      <section className="flex flex-col items-center justify-center gap-8 p-6 sm:p-12">
-        <Brand className="lg:hidden" />
-
-        <div className="w-full max-w-sm space-y-6">
+    <AuthShell>
           <div className="space-y-1.5">
             <h1 className="text-3xl font-semibold tracking-tight text-heading">
               {isSignup ? "Create your account" : "Welcome back"}
@@ -139,7 +104,17 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
               </Field>
 
               <Field>
-                <FieldLabel htmlFor="password">Password</FieldLabel>
+                <div className="flex items-center justify-between">
+                  <FieldLabel htmlFor="password">Password</FieldLabel>
+                  {!isSignup && (
+                    <Link
+                      href="/forgot-password"
+                      className="text-xs font-medium text-teal underline-offset-4 hover:underline"
+                    >
+                      Forgot password?
+                    </Link>
+                  )}
+                </div>
                 <div className="relative">
                   <Input
                     id="password"
@@ -182,8 +157,6 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
               {isSignup ? "Sign in" : "Sign up"}
             </Link>
           </p>
-        </div>
-      </section>
-    </main>
+    </AuthShell>
   )
 }
