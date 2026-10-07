@@ -82,7 +82,9 @@ export function VerifyEmailFlow({ initialSent = false }: { initialSent?: boolean
             await getMe().then(saveUser, () => {})
             setStep("done")
           }}
-          onResend={sendVerifyEmail}
+          onResend={async () => {
+            await sendVerifyEmail()
+          }}
         />
       )}
 
