@@ -9,7 +9,7 @@ import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { createQuiz, updateQuiz, type Quiz, type QuizStatus } from "@/lib/api"
+import { QUIZ_TYPE_LABEL, createQuiz, updateQuiz, type Quiz, type QuizStatus, type QuizType } from "@/lib/api"
 
 type Draft = { text: string; explanation: string; options: string[]; correct: number }
 
@@ -27,19 +27,26 @@ const fromQuiz = (q: Quiz): Draft[] =>
 export function QuizBuilder({
   lessonId,
   quiz,
+  initialType,
   onSaved,
 }: {
   lessonId?: string
   quiz?: Quiz
+  /** Starting type for a new quiz. */
+  initialType?: QuizType
   onSaved: (q: Quiz) => void
 }) {
   const editing = !!quiz
   const key = quiz?.id ?? lessonId
   const [title, setTitle] = useState(quiz?.title ?? "")
   const [description, setDescription] = useState(quiz?.description ?? "")
+  const [type, setType] = useState<QuizType>(quiz?.type ?? initialType ?? "mock_test")
+  const practice = type === "practice"
   const [passPercent, setPass] = useState(quiz?.passPercent ?? 70)
   const [minutes, setMinutes] = useState(quiz?.timeLimitSec ? String(Math.round(quiz.timeLimitSec / 60)) : "")
   const [status, setStatus] = useState<QuizStatus>(quiz?.status ?? "published")
+  // New quizzes start paid: only quizzes marked free open without enrolling, even in a free lesson.
+  const [isFree, setIsFree] = useState(quiz?.isFree ?? false)
   const [questions, setQuestionsRaw] = useState<Draft[]>(quiz ? fromQuiz(quiz) : [blank()])
   // Only send questions when they were touched: the server replaces them all, and refuses once students have attempted.
   const [dirty, setDirty] = useState(false)
@@ -64,21 +71,25 @@ export function QuizBuilder({
         options: q.options.map((o, i) => ({ optionText: o.trim(), isCorrect: i === q.correct })),
       }))
       const timeLimitSec = minutes ? Math.round(Number(minutes) * 60) : undefined
+      // Practice sets reject passPercent and timeLimitSec with a 400, so never send them.
       const saved = editing
         ? await updateQuiz(quiz.id, {
             title: title.trim(),
             description: description.trim(),
-            passPercent,
-            timeLimitSec: timeLimitSec ?? 0, // 0 = untimed
+            // Only when changed: the server refuses a type change once students have attempted.
+            ...(type !== quiz.type ? { type } : {}),
+            ...(practice ? {} : { passPercent, timeLimitSec: timeLimitSec ?? 0 }), // 0 = untimed
             status,
+            isFree,
             ...(dirty ? { questions: payloadQuestions } : {}),
           })
         : await createQuiz(lessonId!, {
+            type,
             title: title.trim(),
             description: description.trim(),
-            passPercent,
-            timeLimitSec,
+            ...(practice ? {} : { passPercent, timeLimitSec }),
             status,
+            isFree,
             questions: payloadQuestions,
           })
       onSaved(saved)
@@ -90,23 +101,48 @@ export function QuizBuilder({
 
   return (
     <form onSubmit={onSubmit} className="space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium text-gray-900">Test type</legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {(["mock_test", "practice"] as const).map((t) => (
+            <label
+              key={t}
+              className={
+                "flex cursor-pointer items-start gap-3 rounded-md border bg-white p-3 text-sm has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring " +
+                (type === t ? "border-teal bg-mint" : "border-border hover:border-teal/40")
+              }
+            >
+              <input type="radio" name={`type-${key}`} className="mt-0.5 size-4" checked={type === t} onChange={() => setType(t)} />
+              <span>
+                <span className="block font-medium text-heading">{QUIZ_TYPE_LABEL[t]}</span>
+                <span className="block text-xs text-gray-500">{t === "mock_test" ? "Timed, scored" : "Untimed, no marks"}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-gray-500">Type can&apos;t change after students attempt it.</p>
+      </fieldset>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field className="sm:col-span-2">
-          <FieldLabel htmlFor={`qt-${key}`}>Quiz title</FieldLabel>
+          <FieldLabel htmlFor={`qt-${key}`}>Title</FieldLabel>
           <Input id={`qt-${key}`} required maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} />
         </Field>
         <Field className="sm:col-span-2">
           <FieldLabel>Description</FieldLabel>
           <Input maxLength={2000} value={description} onChange={(e) => setDescription(e.target.value)} />
         </Field>
-        <Field>
-          <FieldLabel>Pass mark (%)</FieldLabel>
-          <Input type="number" min={0} max={100} required value={passPercent} onChange={(e) => setPass(Number(e.target.value))} />
-        </Field>
-        <Field>
-          <FieldLabel>Time limit (minutes, optional)</FieldLabel>
-          <Input type="number" min={1} max={1440} value={minutes} onChange={(e) => setMinutes(e.target.value)} />
-        </Field>
+        {!practice && (
+          <>
+            <Field>
+              <FieldLabel>Pass mark (%)</FieldLabel>
+              <Input type="number" min={0} max={100} required value={passPercent} onChange={(e) => setPass(Number(e.target.value))} />
+            </Field>
+            <Field>
+              <FieldLabel>Time limit (minutes, optional)</FieldLabel>
+              <Input type="number" min={1} max={1440} value={minutes} onChange={(e) => setMinutes(e.target.value)} />
+            </Field>
+          </>
+        )}
         <Field>
           <FieldLabel>Status</FieldLabel>
           <Select value={status} onChange={(e) => setStatus(e.target.value as QuizStatus)}>
@@ -114,6 +150,10 @@ export function QuizBuilder({
             <option value="draft">Draft</option>
           </Select>
         </Field>
+        <label className="flex items-center gap-2 self-end pb-2 text-sm text-gray-700">
+          <input type="checkbox" checked={isFree} onChange={(e) => setIsFree(e.target.checked)} />
+          Free preview (open without enrolling)
+        </label>
       </div>
 
       {questions.map((q, i) => (
@@ -170,7 +210,7 @@ export function QuizBuilder({
               </Button>
             )}
           </div>
-          <Input aria-label={`Question ${i + 1} explanation`} placeholder="Explanation shown after submitting (optional)" maxLength={5000} value={q.explanation} className="h-9 bg-white" onChange={(e) => patch(i, { explanation: e.target.value })} />
+          <Input aria-label={`Question ${i + 1} explanation`} placeholder={`Explanation ${practice ? "shown after checking the answer" : "shown after submitting"} (optional)`} maxLength={5000} value={q.explanation} className="h-9 bg-white" onChange={(e) => patch(i, { explanation: e.target.value })} />
         </fieldset>
       ))}
 
@@ -181,7 +221,7 @@ export function QuizBuilder({
       <div>
         <Button type="submit" disabled={saving}>
           {saving && <Loader2 className="animate-spin" />}
-          {editing ? "Save quiz" : "Create quiz"}
+          {editing ? "Save test" : "Create test"}
         </Button>
       </div>
     </form>

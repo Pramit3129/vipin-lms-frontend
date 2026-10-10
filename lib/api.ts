@@ -15,6 +15,11 @@ export type User = {
 export type CourseStatus = "draft" | "published" | "archived"
 export type EnrollmentStatus = "active" | "completed" | "expired" | "cancelled"
 export type QuizStatus = "draft" | "published"
+export type QuizType = "mock_test" | "practice"
+
+export const QUIZ_TYPE_LABEL: Record<QuizType, string> = { mock_test: "Mock test", practice: "Practice test" }
+/** Section headings: tests are always shown to people as mock tests or practice tests, never "quizzes". */
+export const QUIZ_TYPE_PLURAL: Record<QuizType, string> = { mock_test: "Mock tests", practice: "Practice tests" }
 
 export type UserSummary = Pick<User, "id" | "firstName" | "lastName" | "email" | "role">
 
@@ -70,9 +75,13 @@ export type Note = {
   description: string
   fileName: string
   sizeBytes: number
+  /** Free preview: opens without enrolling, even in a paid lesson. */
+  isFree: boolean
   uploadedBy: string
   uploaderName: string
   createdAt: string
+  /** Previewing a course you're not enrolled in: the title shows, but it can't be opened. */
+  locked?: boolean
 }
 
 export type Lesson = {
@@ -159,13 +168,17 @@ export type Quiz = {
   createdBy: string
   title: string
   description: string
+  type: QuizType
   status: QuizStatus
   isFree: boolean
-  passPercent: number
+  /** null for practice sets. */
+  passPercent: number | null
   timeLimitSec: number | null
   questionCount: number
   questions?: Question[] | null
   createdAt: string
+  /** Previewing a course you're not enrolled in: the title shows, but it can't be opened. */
+  locked?: boolean
 }
 
 export type AttemptAnswer = {
@@ -180,13 +193,16 @@ export type QuizAttempt = {
   id: string
   quizId: string
   userId: string
-  score: number
-  total: number
-  passed: boolean
+  /** score, total and passed are null for practice attempts. */
+  score: number | null
+  total: number | null
+  passed: boolean | null
   startedAt: string
   submittedAt: string
   answers: AttemptAnswer[] | null
 }
+
+export const isPractice = (q: Pick<Quiz, "type">) => q.type === "practice"
 
 export type NewQuestion = {
   questionText: string
@@ -434,14 +450,19 @@ export const deleteLesson = (lessonId: string) =>
 
 export const uploadNote = (
   lessonId: string,
-  input: { title: string; description?: string; file: File }
+  input: { title: string; description?: string; isFree?: boolean; file: File }
 ) => {
   const form = new FormData()
   form.set("title", input.title)
   if (input.description) form.set("description", input.description)
+  form.set("isFree", String(!!input.isFree))
   form.set("file", input.file)
   return json<Note>("POST", `/lessons/${id(lessonId)}/notes`, { form })
 }
+
+/** Changes only the fields sent; the PDF itself can't be replaced. */
+export const updateNote = (noteId: string, input: Partial<{ title: string; description: string; isFree: boolean }>) =>
+  json<Note>("PATCH", `/notes/${id(noteId)}`, { body: input })
 
 export const deleteNote = (noteId: string) =>
   json<string>("DELETE", `/notes/${id(noteId)}`)
@@ -544,16 +565,19 @@ export const createPost = (input: { courseId: string; content: string; links?: s
 export const deletePost = (postId: string) => json<string>("DELETE", `/posts/${id(postId)}`)
 
 // ── quizzes ─────────────────────────────────────────────────────────────────
-export const listQuizzes = async (lessonId: string) =>
-  (await json<Quiz[]>("GET", `/lessons/${id(lessonId)}/quizzes`)) ?? []
+export const listQuizzes = async (lessonId: string, type?: QuizType) =>
+  (await json<Quiz[]>("GET", `/lessons/${id(lessonId)}/quizzes`, { query: { type } })) ?? []
 
 export const createQuiz = (
   lessonId: string,
   input: {
     title: string
+    type?: QuizType
     description?: string
     isFree?: boolean
+    /** Not allowed for practice sets. */
     passPercent?: number
+    /** Not allowed for practice sets. */
     timeLimitSec?: number
     status?: QuizStatus
     questions: NewQuestion[]
@@ -564,6 +588,8 @@ export const updateQuiz = (
   quizId: string,
   input: Partial<{
     title: string
+    /** 409 once the quiz has attempts. */
+    type: QuizType
     description: string
     isFree: boolean
     passPercent: number

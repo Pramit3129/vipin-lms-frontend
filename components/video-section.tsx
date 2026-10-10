@@ -59,14 +59,12 @@ export function fmtBytes(n: number) {
  */
 export function VideoSection({
   lessonId,
-  lessonIsFree,
   videos,
   setVideos,
   formOpen,
   setFormOpen,
 }: {
   lessonId: string
-  lessonIsFree: boolean
   videos: Video[]
   setVideos: (fn: (v: Video[]) => Video[]) => void
   formOpen: boolean
@@ -233,7 +231,6 @@ export function VideoSection({
       {formOpen && (
         <VideoUploadForm
           lessonId={lessonId}
-          defaultFree={lessonIsFree}
           onStart={start}
           onClose={() => setFormOpen(false)}
         />
@@ -501,17 +498,16 @@ function VideoRow({
 
 function VideoUploadForm({
   lessonId,
-  defaultFree,
   onStart,
   onClose,
 }: {
   lessonId: string
-  defaultFree: boolean
   onStart: (file: File, isFree: boolean) => void
   onClose: () => void
 }) {
   const [file, setFile] = useState<File | null>(null)
-  const [isFree, setIsFree] = useState(defaultFree)
+  // New videos start paid: only videos marked free play without enrolling, even in a free lesson.
+  const [isFree, setIsFree] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
 

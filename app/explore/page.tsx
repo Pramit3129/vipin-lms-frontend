@@ -55,7 +55,7 @@ function Explore() {
     <>
       <PageTitle
         title="Explore courses"
-        subtitle="Watch free lectures, read free notes and try free quizzes from every instructor. No enrollment needed."
+        subtitle="Watch free lectures, read free notes and try free tests from every instructor. No enrollment needed."
       />
 
       <div className="flex flex-wrap items-center gap-3">
@@ -137,7 +137,7 @@ function CourseCard({ c }: { c: CatalogCourse }) {
   const stats = [
     { n: c.freeVideoCount, one: "video", many: "videos", icon: CirclePlay },
     { n: c.freeNoteCount, one: "note", many: "notes", icon: FileText },
-    { n: c.freeQuizCount, one: "quiz", many: "quizzes", icon: ClipboardList },
+    { n: c.freeQuizCount, one: "test", many: "tests", icon: ClipboardList },
   ].filter((s) => s.n > 0)
 
   return (

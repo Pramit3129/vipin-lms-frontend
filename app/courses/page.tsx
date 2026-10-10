@@ -88,7 +88,7 @@ function Courses() {
     <>
       <PageTitle
         title="Courses"
-        subtitle="Every course on the platform. Courses you own can be edited, published and filled with lessons, notes and quizzes."
+        subtitle="Every course on the platform. Courses you own can be edited, published and filled with lessons, notes and tests."
         actions={
           <Button onClick={() => setCreating((v) => !v)}>
             <Plus />
@@ -324,7 +324,7 @@ function CreateCourse({
                   </option>
                 ))}
             </Select>
-            <p className="text-xs text-gray-500">The instructor owns the course and manages its lessons, notes and quizzes.</p>
+            <p className="text-xs text-gray-500">The instructor owns the course and manages its lessons, notes and tests.</p>
           </Field>
           <Field className="sm:col-span-2">
             <FieldLabel htmlFor="short">Short description</FieldLabel>

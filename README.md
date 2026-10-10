@@ -1,4 +1,4 @@
-# Next.js template
+# Vipin LMS  
 
 This is a Next.js template with shadcn/ui.
 

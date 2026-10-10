@@ -5,8 +5,6 @@ import {
   ArrowRight,
   ChevronDown,
   CirclePlay,
-  ClipboardList,
-  FileText,
   Loader2,
   Lock,
   PanelRightClose,
@@ -21,6 +19,8 @@ import { Suspense, useEffect, useRef, useState } from "react"
 
 import { AppShell, errMsg } from "@/components/app-shell"
 import { Brand } from "@/components/brand"
+import { LessonNotes } from "@/components/note-list"
+import { QuizList } from "@/components/quiz-list"
 import { PdfPreview } from "@/components/pdf-preview"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -270,6 +270,11 @@ function Learn() {
               totalLectures={flat.length}
               totalSections={sections.length}
               isOwner={user.role !== "student" && course?.instructorId === user.id}
+              setNotes={(fn) =>
+                setSections((ss) =>
+                  ss.map((s) => (s.lesson.id === section!.lesson.id ? { ...s, lesson: { ...s.lesson, notes: fn(s.lesson.notes ?? []) } } : s))
+                )
+              }
               content={content}
               next={next}
               onNext={next && (() => go(next))}
@@ -487,6 +492,7 @@ function LectureTabs({
   totalLectures,
   totalSections,
   isOwner,
+  setNotes,
   content,
   next,
   onNext,
@@ -499,6 +505,8 @@ function LectureTabs({
   totalLectures: number
   totalSections: number
   isOwner: boolean
+  /** Updates this lesson's notes after the owner shares, edits or deletes one. */
+  setNotes: (fn: (n: Note[]) => Note[]) => void
   content: React.ReactNode
   next?: Video
   onNext?: () => void
@@ -521,7 +529,7 @@ function LectureTabs({
     { key: "content", label: "Course content", className: "lg:hidden" },
     { key: "overview", label: "Overview" },
     { key: "notes", label: `Notes${notes.length ? ` (${notes.length})` : ""}` },
-    { key: "quizzes", label: `Quizzes${quizzes?.length ? ` (${quizzes.length})` : ""}` },
+    { key: "quizzes", label: `Tests${quizzes?.length ? ` (${quizzes.length})` : ""}` },
   ]
   const overviewActive = tab === "overview"
 
@@ -604,27 +612,14 @@ function LectureTabs({
         {overviewActive && overview}
         {tab === "notes" && (
           <div className="max-w-3xl space-y-3">
-            {notes.length === 0 && <Empty>No notes for this lecture.</Empty>}
-            <ul className="space-y-2">
-              {notes.map((n) => (
-                <li key={n.id}>
-                  <button
-                    type="button"
-                    onClick={() => setPreview(n)}
-                    className="group/row flex w-full items-center gap-3 rounded-md border border-border bg-white p-3 text-left transition-all hover:border-teal/40 hover:shadow-sm"
-                  >
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-mint text-teal transition-colors group-hover/row:bg-teal group-hover/row:text-white">
-                      <FileText className="size-5" strokeWidth={1.75} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold text-heading">{n.title}</span>
-                      <span className="tnum text-xs text-muted-foreground">PDF · {(n.sizeBytes / 1024).toFixed(0)} KB</span>
-                    </span>
-                    <ArrowRight className="size-4 text-heading/50 transition-transform group-hover/row:translate-x-1" />
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <LessonNotes
+              lessonId={lesson.id}
+              notes={notes}
+              setNotes={setNotes}
+              isOwner={isOwner}
+              onOpen={setPreview}
+              empty={<Empty>No notes for this lecture.</Empty>}
+            />
           </div>
         )}
         {tab === "quizzes" && (
@@ -634,29 +629,8 @@ function LectureTabs({
                 <Loader2 className="size-4 animate-spin" /> Loading…
               </p>
             )}
-            {quizzes?.length === 0 && <Empty>No quizzes for this lecture.</Empty>}
-            <ul className="space-y-2">
-              {quizzes?.map((q) => (
-                <li key={q.id}>
-                  <Link
-                    href={`/quizzes/${q.id}`}
-                    className="group/row flex items-center gap-3 rounded-md border border-border bg-white p-3 transition-all hover:border-teal/40 hover:shadow-sm"
-                  >
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-lime-soft text-navy">
-                      <ClipboardList className="size-5" strokeWidth={1.75} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold text-heading">{q.title}</span>
-                      <span className="tnum flex items-center gap-2 text-xs text-muted-foreground">
-                        {q.questionCount} questions
-                        {q.status === "draft" && <Badge variant="secondary">Draft</Badge>}
-                      </span>
-                    </span>
-                    <ArrowRight className="size-4 text-heading/50 transition-transform group-hover/row:translate-x-1" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            {quizzes?.length === 0 && <Empty>No tests for this lecture.</Empty>}
+            {quizzes && <QuizList quizzes={quizzes} />}
           </div>
         )}
       </div>

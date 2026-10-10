@@ -1,13 +1,15 @@
 "use client"
 
-import { ArrowRight, ChevronDown, ChevronsUpDown, CirclePlay, ClipboardList, Eye, EyeOff, FileText, Film, Layers, Loader2, Lock, LockOpen, Pencil, Plus, Trash2, Upload } from "lucide-react"
+import { ChevronDown, ChevronsUpDown, CirclePlay, ClipboardList, Eye, EyeOff, FileText, Film, Layers, Loader2, Lock, LockOpen, Pencil, Plus, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useCallback, useEffect, useState } from "react"
 
 import { AppShell, ErrorNote, PageTitle, errMsg } from "@/components/app-shell"
+import { LessonNotes } from "@/components/note-list"
 import { PdfPreview } from "@/components/pdf-preview"
-import { QuizBuilder } from "@/components/quiz-builder"
+import { QuizCreator } from "@/components/quiz-pdf-import"
+import { QuizList } from "@/components/quiz-list"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -22,7 +24,6 @@ import {
   createLesson,
   deleteCourse,
   deleteLesson,
-  deleteNote,
   downloadNote,
   getCourse,
   listExams,
@@ -32,7 +33,6 @@ import {
   updateCourse,
   updateCourseStatus,
   updateLesson,
-  uploadNote,
   type Course as CourseT,
   type CourseStatus,
   type Exam,
@@ -42,7 +42,6 @@ import {
   type Video,
 } from "@/lib/api"
 
-const MAX_PDF = 25 * 1024 * 1024
 
 const slugOk = "[a-z0-9]+(-[a-z0-9]+)*"
 
@@ -135,8 +134,8 @@ function CourseView() {
         title={course?.title ?? "Course"}
         subtitle={
           isOwner
-            ? "Manage lessons, share PDF notes and publish quizzes."
-            : course?.shortDescription || "Lessons, notes and quizzes for this course."
+            ? "Manage lessons, share PDF notes and publish tests."
+            : course?.shortDescription || "Lessons, notes and tests for this course."
         }
         actions={
           isOwner ? (
@@ -183,7 +182,7 @@ function CourseView() {
             <p className="font-semibold text-heading">You&apos;re previewing this course</p>
             <p className="tnum text-sm text-heading/80">
               {freeLessons} of {lessons.length} {lessons.length === 1 ? "lesson is" : "lessons are"} free to preview, along with any free videos and
-              quizzes. Ask your admin to enroll you to unlock everything.
+              tests. Ask your admin to enroll you to unlock everything.
             </p>
           </div>
         </div>
@@ -248,7 +247,7 @@ function CourseView() {
       {course && !canSeeLessons && (
         <Card className="bg-white">
           <CardContent className="py-8 text-center text-sm text-gray-500">
-            Lessons, notes and quizzes are managed by the course&apos;s instructor.
+            Lessons, notes and tests are managed by the course&apos;s instructor.
           </CardContent>
         </Card>
       )}
@@ -461,7 +460,7 @@ function LessonCard({
   const [preview, setPreview] = useState<Note | null>(null)
   const [quizzes, setQuizzes] = useState<Quiz[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [panel, setPanel] = useState<"note" | "quiz" | "video" | "edit" | null>(null)
+  const [panel, setPanel] = useState<"quiz" | "video" | "edit" | null>(null)
   const notes = lesson.notes ?? []
   const locked = !!lesson.locked
   const setNotes = (fn: (n: Note[]) => Note[]) => onChange((l) => ({ ...l, notes: fn(l.notes ?? []) }))
@@ -504,17 +503,6 @@ function LessonCard({
     }
   }
 
-  async function remove(n: Note) {
-    if (!confirm(`Delete "${n.title}"? The PDF will be removed.`)) return
-    setError(null)
-    try {
-      await deleteNote(n.id)
-      setNotes((ns) => ns.filter((x) => x.id !== n.id))
-    } catch (e) {
-      setError(errMsg(e))
-    }
-  }
-
   return (
     <article
       className="rise overflow-hidden rounded-lg border border-border bg-white shadow-[0_1px_2px_rgba(10,37,64,0.05)] transition-shadow duration-200 hover:shadow-md"
@@ -541,7 +529,7 @@ function LessonCard({
             <span className="block truncate text-lg font-semibold text-heading">{lesson.title}</span>
             <span className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5"><FileText className="size-3.5" />{notes.length} {notes.length === 1 ? "note" : "notes"}</span>
-              <span className="flex items-center gap-1.5"><ClipboardList className="size-3.5" />{quizzes.length} {quizzes.length === 1 ? "quiz" : "quizzes"}</span>
+              <span className="flex items-center gap-1.5"><ClipboardList className="size-3.5" />{quizzes.length} {quizzes.length === 1 ? "test" : "tests"}</span>
               <span className="flex items-center gap-1.5"><Film className="size-3.5" />{videos.length} {videos.length === 1 ? "video" : "videos"}</span>
             </span>
           </span>
@@ -590,7 +578,6 @@ function LessonCard({
             {isOwner && (
               <VideoSection
                 lessonId={lesson.id}
-                lessonIsFree={lesson.isFree}
                 videos={videos}
                 setVideos={setVideos}
                 formOpen={panel === "video"}
@@ -603,90 +590,40 @@ function LessonCard({
                 <h3 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-heading uppercase">
                   <Layers className="size-4 text-teal" /> Notes
                 </h3>
-                {notes.length === 0 && (
-                  <p className="rounded-md border border-dashed border-border bg-white px-4 py-5 text-center text-sm text-muted-foreground">
-                    {locked ? "Notes unlock when you enroll." : "No notes shared yet."}
-                  </p>
-                )}
-                <ul className="space-y-2">
-                  {notes.map((n) => (
-                    <li key={n.id} className="group/row flex items-center gap-2 rounded-md border border-border bg-white transition-all duration-200 hover:border-teal/40 hover:shadow-sm">
-                      <button type="button" onClick={() => open(n)} className="flex min-w-0 flex-1 items-center gap-3 rounded-md p-3 text-left">
-                        <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-mint text-teal transition-colors group-hover/row:bg-teal group-hover/row:text-white">
-                          <FileText className="size-5" strokeWidth={1.75} />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-semibold text-heading">{n.title}</span>
-                          <span className="tnum text-xs text-muted-foreground">PDF · {(n.sizeBytes / 1024).toFixed(0)} KB</span>
-                        </span>
-                        <ArrowRight className="size-4 shrink-0 text-heading/50 transition-transform duration-200 group-hover/row:translate-x-1" />
-                      </button>
-                      {isOwner && (
-                        <Button variant="ghost" size="icon-sm" aria-label={`Delete ${n.title}`} className="mr-2 hover:bg-destructive/10 hover:text-destructive" onClick={() => remove(n)}>
-                          <Trash2 />
-                        </Button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-                {isOwner && (
-                  <Button variant="outline" size="sm" onClick={() => setPanel(panel === "note" ? null : "note")}>
-                    <Upload /> Share a note
-                  </Button>
-                )}
-                {isOwner && panel === "note" && (
-                  <NoteUpload
-                    lessonId={lesson.id}
-                    onUploaded={(n) => {
-                      setNotes((ns) => [n, ...ns])
-                      setPanel(null)
-                    }}
-                  />
-                )}
+                <LessonNotes
+                  lessonId={lesson.id}
+                  notes={notes}
+                  setNotes={setNotes}
+                  isOwner={isOwner}
+                  onOpen={open}
+                  empty={
+                    <p className="rounded-md border border-dashed border-border bg-white px-4 py-5 text-center text-sm text-muted-foreground">
+                      No notes shared yet.
+                    </p>
+                  }
+                />
               </section>
 
               <section className="space-y-3">
                 <h3 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-heading uppercase">
-                  <ClipboardList className="size-4 text-teal" /> Quizzes
+                  <ClipboardList className="size-4 text-teal" /> Tests
                 </h3>
                 {quizzes.length === 0 && (
                   <p className="rounded-md border border-dashed border-border bg-white px-4 py-5 text-center text-sm text-muted-foreground">
-                    {locked ? "Quizzes unlock when you enroll." : "No quizzes yet."}
+                    No tests yet.
                   </p>
                 )}
-                <ul className="space-y-2">
-                  {quizzes.map((q) => (
-                    <li key={q.id}>
-                      <Link href={`/quizzes/${q.id}`} className="group/row flex items-center gap-3 rounded-md border border-border bg-white p-3 transition-all duration-200 hover:border-teal/40 hover:shadow-sm">
-                        <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-lime-soft text-navy transition-colors group-hover/row:bg-secondary">
-                          <ClipboardList className="size-5" strokeWidth={1.75} />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-semibold text-heading">{q.title}</span>
-                          <span className="tnum flex items-center gap-2 text-xs text-muted-foreground">
-                            {q.questionCount} questions
-                            {q.status === "draft" && <Badge variant="secondary">Draft</Badge>}
-                          </span>
-                        </span>
-                        <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-heading/40 text-heading transition-colors duration-200 group-hover/row:border-teal group-hover/row:bg-teal group-hover/row:text-white">
-                          <ArrowRight className="size-3.5" />
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
+                <QuizList quizzes={quizzes} />
                 {isOwner && (
                   <Button variant="outline" size="sm" onClick={() => setPanel(panel === "quiz" ? null : "quiz")}>
-                    <Plus /> Create quiz
+                    <Plus /> Create test
                   </Button>
                 )}
                 {isOwner && panel === "quiz" && (
-                  <QuizBuilder
+                  <QuizCreator
                     lessonId={lesson.id}
-                    onSaved={(q) => {
-                      setQuizzes((qs) => [...qs, q])
-                      setPanel(null)
-                    }}
+                    onSaved={(q) => setQuizzes((qs) => [...qs, q])}
+                    onClose={() => setPanel(null)}
                   />
                 )}
               </section>
@@ -736,51 +673,6 @@ function EditLesson({ lesson, onSaved }: { lesson: Lesson; onSaved: (l: Lesson) 
       <Button type="submit" disabled={saving}>
         {saving && <Loader2 className="animate-spin" />}
         Save lesson
-      </Button>
-    </form>
-  )
-}
-
-function NoteUpload({ lessonId, onUploaded }: { lessonId: string; onUploaded: (n: Note) => void }) {
-  const [title, setTitle] = useState("")
-  const [description, setDescription] = useState("")
-  const [file, setFile] = useState<File | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError(null)
-    if (!file) return setError("Choose a PDF file.")
-    if (!/\.pdf$/i.test(file.name) || (file.type && file.type !== "application/pdf")) return setError("Only PDF files are allowed.")
-    if (file.size > MAX_PDF) return setError("The PDF must be 25 MB or smaller.")
-    setSaving(true)
-    try {
-      onUploaded(await uploadNote(lessonId, { title: title.trim(), description: description.trim(), file }))
-    } catch (err) {
-      setError(errMsg(err))
-      setSaving(false)
-    }
-  }
-
-  return (
-    <form onSubmit={onSubmit} className="space-y-3 rounded-lg border border-border bg-white p-5 shadow-sm">
-      <Field>
-        <FieldLabel htmlFor={`nt-${lessonId}`}>Title</FieldLabel>
-        <Input id={`nt-${lessonId}`} required maxLength={200} value={title} onChange={(e) => setTitle(e.target.value)} />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor={`nd-${lessonId}`}>Description (optional)</FieldLabel>
-        <Input id={`nd-${lessonId}`} maxLength={2000} value={description} onChange={(e) => setDescription(e.target.value)} />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor={`nf-${lessonId}`}>PDF (max 25 MB)</FieldLabel>
-        <Input id={`nf-${lessonId}`} type="file" accept="application/pdf,.pdf" required onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-      </Field>
-      <ErrorNote error={error} />
-      <Button type="submit" disabled={saving}>
-        {saving && <Loader2 className="animate-spin" />}
-        Upload
       </Button>
     </form>
   )
